@@ -1,0 +1,864 @@
+# Distributed Background Job Processing Platform
+
+A scalable background job processing platform that asynchronously accepts, queues, and executes long-running tasks using a distributed worker architecture. The system separates job submission from job execution using BullMQ and Redis, allowing multiple workers to process jobs concurrently while MongoDB maintains persistent job state, progress, execution history, and failure information.
+
+A React-based monitoring dashboard provides real-time visibility into job execution using Socket.IO, allowing users to track job status and progress without manually refreshing the application.
+
+## Overview
+
+Traditional web applications can become slow or unresponsive when long-running operations are executed directly inside HTTP request handlers. This platform addresses that problem by moving resource-intensive tasks to background workers.
+
+Instead of processing a task directly:
+
+```text
+Client
+  |
+  v
+API
+  |
+  v
+Long-Running Task
+  |
+  v
+Response
+```
+
+the platform uses asynchronous job processing:
+
+```text
+Client
+  |
+  v
+REST API
+  |
+  +----> MongoDB
+  |
+  v
+BullMQ
+  |
+  v
+Redis
+  |
+  v
+Worker
+  |
+  v
+Job Processing
+  |
+  v
+MongoDB
+```
+
+This allows the API to remain responsive while workers independently process background tasks.
+
+## Technology Stack
+
+### Frontend
+
+* React.js
+* Vite
+* JavaScript
+* HTML5
+* CSS3
+
+### Backend
+
+* Node.js
+* Express.js
+* REST APIs
+
+### Queue and Job Processing
+
+* BullMQ
+* Redis
+* Worker processes
+* Queue events
+* Job scheduling
+* Job retries
+* Exponential backoff
+* Dead Letter Queue
+
+### Database
+
+* MongoDB
+* Mongoose
+
+### Real-Time Communication
+
+* Socket.IO
+* WebSocket-based event communication
+
+### Development and Testing
+
+* Postman
+* Git
+* GitHub
+* Docker
+
+## Key Features
+
+### Asynchronous Job Processing
+
+Long-running tasks are submitted to a background queue instead of being executed directly during an API request.
+
+This separates job submission from job execution and allows the API to respond without waiting for the task to finish.
+
+### Priority-Based Processing
+
+Jobs can be assigned different priority levels:
+
+```text
+HIGH
+MEDIUM
+LOW
+```
+
+Higher-priority jobs are processed before lower-priority jobs when multiple eligible jobs are waiting in the queue.
+
+### Delayed Job Execution
+
+Jobs can be scheduled to execute after a specified delay.
+
+Example:
+
+```text
+Job Submitted
+      |
+      v
+Delay: 10 seconds
+      |
+      v
+Job Becomes Eligible
+      |
+      v
+Worker Processes Job
+```
+
+### Scheduled Jobs
+
+The platform supports scheduled background tasks that can execute at predefined intervals.
+
+Examples include:
+
+* Periodic report generation
+* Scheduled data processing
+* Recurring maintenance tasks
+* Automated background operations
+
+### Automatic Retries
+
+Failed jobs can automatically retry a configurable number of times.
+
+The platform uses exponential backoff to increase the delay between retry attempts.
+
+```text
+Attempt 1
+   |
+   X Failed
+   |
+   v
+Wait 2 seconds
+   |
+   v
+Attempt 2
+   |
+   X Failed
+   |
+   v
+Wait 4 seconds
+   |
+   v
+Attempt 3
+```
+
+This reduces repeated immediate failures and provides temporary failures with time to recover.
+
+### Dead Letter Queue
+
+Jobs that continue to fail after exhausting their retry attempts are moved to a Dead Letter Queue.
+
+```text
+Main Queue
+    |
+    v
+Worker
+    |
+    +---- Success ---> Completed
+    |
+    +---- Failure
+           |
+           v
+         Retry
+           |
+           +---- Success ---> Completed
+           |
+           +---- Final Failure
+                    |
+                    v
+                  DLQ
+```
+
+The DLQ preserves failed job information for investigation and potential manual reprocessing.
+
+### Multiple Workers
+
+Multiple worker processes can connect to the same BullMQ queue.
+
+```text
+                 Redis
+                   |
+          +--------+--------+
+          |        |        |
+          v        v        v
+       Worker 1 Worker 2 Worker 3
+          |        |        |
+          v        v        v
+        Job A    Job B    Job C
+```
+
+This allows available workers to process different jobs concurrently and improves overall throughput.
+
+### Configurable Concurrency
+
+Workers can process multiple jobs concurrently based on the configured concurrency level.
+
+For example:
+
+```text
+Worker 1
+  ├── Job A
+  ├── Job B
+  └── Job C
+```
+
+Concurrency can be tuned according to the workload and available system resources.
+
+### Job Progress Tracking
+
+Long-running jobs report their execution progress from 0% to 100%.
+
+```text
+0% → 20% → 40% → 60% → 80% → 100%
+```
+
+Progress information is stored in MongoDB and also propagated through BullMQ events.
+
+### Persistent Job State
+
+MongoDB maintains the application's persistent representation of each job.
+
+Supported states include:
+
+```text
+QUEUED
+ACTIVE
+COMPLETED
+FAILED
+DEAD
+```
+
+This allows job information to remain available even after the worker finishes processing.
+
+### Batch Job Submission
+
+Multiple jobs can be submitted through a single API request.
+
+Example:
+
+```json
+{
+  "jobs": [
+    {
+      "type": "GENERATE_REPORT",
+      "priority": "HIGH"
+    },
+    {
+      "type": "SEND_EMAIL",
+      "priority": "MEDIUM"
+    },
+    {
+      "type": "PROCESS_IMAGE",
+      "priority": "LOW"
+    }
+  ]
+}
+```
+
+### Real-Time Monitoring
+
+The React dashboard receives job updates through Socket.IO.
+
+Instead of repeatedly requesting the backend:
+
+```text
+React
+  |
+  | GET /api/jobs
+  | GET /api/jobs
+  | GET /api/jobs
+  v
+Backend
+```
+
+the platform uses real-time events:
+
+```text
+Worker
+   |
+   v
+BullMQ / Redis
+   |
+   v
+Socket.IO
+   |
+   v
+React Dashboard
+```
+
+This allows job status and progress to update without manually refreshing the page.
+
+## Architecture
+
+```text
+                         React Dashboard
+                               |
+                               | HTTP / WebSocket
+                               v
+                    +----------------------+
+                    |    Node.js API       |
+                    |     Express.js       |
+                    +----------+-----------+
+                               |
+                  +------------+------------+
+                  |                         |
+                  v                         v
+             MongoDB                   BullMQ Queue
+           Persistent State                  |
+                  |                          v
+                  |                       Redis
+                  |                          |
+                  |              +-----------+-----------+
+                  |              |           |           |
+                  |              v           v           v
+                  |           Worker 1    Worker 2    Worker 3
+                  |              |           |           |
+                  |              +-----------+-----------+
+                  |                          |
+                  |                          v
+                  |                    Job Processing
+                  |                          |
+                  +--------------------------+
+                               |
+                               v
+                        Socket.IO Events
+                               |
+                               v
+                         React Dashboard
+```
+
+## Component Responsibilities
+
+### React
+
+Responsible for:
+
+* Dashboard interface
+* Job listing
+* Job status display
+* Priority display
+* Progress visualization
+* Job creation
+* Real-time UI updates
+
+### Node.js and Express
+
+Responsible for:
+
+* REST API
+* Job creation
+* Request validation
+* Communication with MongoDB
+* Adding jobs to BullMQ
+* Serving dashboard data
+* Socket.IO integration
+
+### BullMQ
+
+Responsible for:
+
+* Job queue management
+* Job lifecycle
+* Priority handling
+* Delayed execution
+* Scheduled jobs
+* Retry management
+* Backoff strategies
+* Worker coordination
+* Queue events
+
+### Redis
+
+Redis acts as the underlying data store and coordination layer for BullMQ.
+
+It manages queue-related information such as:
+
+* Waiting jobs
+* Active jobs
+* Delayed jobs
+* Job metadata
+* Worker coordination
+* Queue state
+
+### Workers
+
+Workers consume jobs from BullMQ and execute the actual background processing.
+
+Multiple workers can operate independently while consuming jobs from the same queue.
+
+### MongoDB
+
+MongoDB maintains persistent application-level job information including:
+
+* Job ID
+* Job type
+* Job status
+* Priority
+* Payload
+* Progress
+* Attempts
+* Error information
+* Creation time
+* Completion information
+* Execution history
+
+### Socket.IO
+
+Socket.IO provides real-time communication between the backend and React dashboard.
+
+It is used to broadcast events such as:
+
+```text
+job-progress
+job-completed
+job-updated
+job-failed
+```
+
+## Job Lifecycle
+
+A typical job follows this lifecycle:
+
+```text
+                 Job Created
+                     |
+                     v
+                  QUEUED
+                     |
+                     v
+                  WAITING
+                     |
+                     v
+                   ACTIVE
+                  /      \
+                 /        \
+                v          v
+          COMPLETED      FAILED
+                           |
+                           v
+                         RETRY
+                           |
+                           v
+                         ACTIVE
+                           |
+                           v
+                    Retry Limit Reached
+                           |
+                           v
+                          DEAD
+```
+
+## Job Processing Flow
+
+```text
+1. Client submits a job
+             |
+             v
+2. Express API receives request
+             |
+             v
+3. Job record created in MongoDB
+             |
+             v
+4. Job added to BullMQ
+             |
+             v
+5. BullMQ stores queue state in Redis
+             |
+             v
+6. Worker receives the job
+             |
+             v
+7. Worker updates job status to ACTIVE
+             |
+             v
+8. Worker processes the task
+             |
+             v
+9. Worker reports progress
+             |
+             v
+10. MongoDB stores updated progress
+             |
+             v
+11. Socket.IO broadcasts updates
+             |
+             v
+12. React dashboard updates in real time
+             |
+             v
+13. Job completes or fails
+```
+
+## MongoDB and Redis Responsibilities
+
+The platform deliberately uses MongoDB and Redis for different purposes.
+
+### MongoDB
+
+MongoDB answers:
+
+> What happened to this job?
+
+It stores persistent application data such as:
+
+```text
+Job
+├── ID
+├── Type
+├── Status
+├── Priority
+├── Progress
+├── Attempts
+├── Error
+└── Timestamps
+```
+
+### Redis / BullMQ
+
+Redis answers:
+
+> What jobs need to be processed?
+
+It manages:
+
+```text
+Waiting Jobs
+Active Jobs
+Delayed Jobs
+Retries
+Worker Coordination
+Queue State
+```
+
+This separation allows Redis/BullMQ to handle fast queue coordination while MongoDB maintains persistent application history.
+
+## API Overview
+
+Example API endpoints:
+
+```text
+POST   /api/jobs
+POST   /api/jobs/batch
+
+GET    /api/jobs
+GET    /api/jobs/:id
+
+GET    /api/jobs/stats
+GET    /api/jobs/active
+```
+
+The exact endpoints may vary depending on the current implementation.
+
+## Example Job
+
+A job submitted to the platform may contain:
+
+```json
+{
+  "type": "GENERATE_REPORT",
+  "priority": "HIGH",
+  "payload": {
+    "reportType": "sales",
+    "format": "pdf"
+  }
+}
+```
+
+The job is persisted in MongoDB and added to the BullMQ queue.
+
+A worker then consumes the job and performs the required processing.
+
+## Project Structure
+
+```text
+Distributed-Job-Processing-Platform/
+│
+├── client/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── services/
+│   │   ├── App.jsx
+│   │   └── main.jsx
+│   ├── package.json
+│   └── ...
+│
+├── server/
+│   ├── config/
+│   ├── models/
+│   ├── routes/
+│   ├── controllers/
+│   ├── queues/
+│   ├── workers/
+│   ├── events/
+│   ├── app.js
+│   ├── worker.js
+│   ├── package.json
+│   └── ...
+│
+├── .gitignore
+├── .env.example
+└── README.md
+```
+
+## Environment Configuration
+
+Create a `.env` file in the backend directory.
+
+Example:
+
+```env
+PORT=7070
+
+MONGO_URI=mongodb://localhost:27017/job_platform
+
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+```
+
+Do not commit the `.env` file to GitHub.
+
+A `.env.example` file should be included in the repository without actual credentials:
+
+```env
+PORT=
+MONGO_URI=
+
+REDIS_HOST=
+REDIS_PORT=
+```
+
+## Prerequisites
+
+Before running the project, install:
+
+* Node.js
+* npm
+* MongoDB
+* Docker
+* Git
+
+Redis can be started using Docker.
+
+## Running Redis
+
+Start a Redis container:
+
+```bash
+docker run --name job-redis -p 6379:6379 -d redis
+```
+
+Verify the container:
+
+```bash
+docker ps
+```
+
+## Installation
+
+### 1. Clone the Repository
+
+```bash
+git clone <repository-url>
+cd Distributed-Job-Processing-Platform
+```
+
+### 2. Install Backend Dependencies
+
+```bash
+cd server
+npm install
+```
+
+### 3. Configure Environment Variables
+
+Create a `.env` file using the required MongoDB and Redis configuration.
+
+### 4. Start the Backend API
+
+```bash
+npm run dev
+```
+
+### 5. Start a Worker
+
+Open another terminal:
+
+```bash
+cd server
+node worker.js
+```
+
+### 6. Run Multiple Workers
+
+Additional workers can be started to demonstrate distributed processing:
+
+```bash
+node worker.js
+node worker.js
+node worker.js
+```
+
+All workers connect to the same BullMQ queue through Redis.
+
+### 7. Start the Frontend
+
+Open another terminal:
+
+```bash
+cd client
+npm install
+npm run dev
+```
+
+The React application will start using Vite.
+
+## Testing
+
+REST APIs can be tested using Postman.
+
+Important scenarios to test include:
+
+* Creating a job
+* Creating batch jobs
+* Retrieving jobs
+* Checking job status
+* Testing priority processing
+* Testing delayed jobs
+* Testing scheduled jobs
+* Simulating worker failures
+* Testing automatic retries
+* Testing exponential backoff
+* Testing Dead Letter Queue behavior
+* Running multiple workers
+* Testing concurrent processing
+* Monitoring real-time progress
+
+## Example Use Cases
+
+The platform can be adapted for various asynchronous workloads, including:
+
+* Report generation
+* Email processing
+* Image processing
+* Data transformation
+* File processing
+* Scheduled background tasks
+* Notification processing
+* Data import/export
+* Long-running API operations
+* Automated maintenance tasks
+
+## Scalability
+
+The architecture allows processing capacity to be increased by adding additional worker processes.
+
+```text
+                Redis
+                  |
+        +---------+---------+
+        |         |         |
+        v         v         v
+     Worker 1  Worker 2  Worker 3
+        |         |         |
+        +---------+---------+
+                  |
+                  v
+             More Throughput
+```
+
+Because workers are independent consumers of the same queue, additional workers can be introduced without changing the client-side application.
+
+## Reliability
+
+The platform includes multiple mechanisms for reliable background processing:
+
+* Automatic job retries
+* Exponential backoff
+* Dead Letter Queue
+* Persistent MongoDB job records
+* Job status tracking
+* Failure information
+* Multiple worker support
+* Configurable concurrency
+* Delayed execution
+* Priority processing
+
+## Future Enhancements
+
+Potential improvements include:
+
+* Authentication and role-based access control
+* Worker health monitoring
+* Advanced job metrics
+* Prometheus and Grafana integration
+* Job cancellation
+* Manual DLQ retry interface
+* Job result storage
+* Rate limiting
+* Redis clustering
+* Horizontal worker scaling
+* Docker Compose deployment
+* Kubernetes-based deployment
+* Automated testing with Jest
+* CI/CD pipeline
+* Cloud deployment
+* AI/ML-based job failure prediction and workload analysis
+
+## Key Distributed Systems Concepts Demonstrated
+
+This project provides practical implementation of several backend and distributed-systems concepts:
+
+* Asynchronous processing
+* Producer-consumer architecture
+* Message queues
+* Distributed workers
+* Redis-based coordination
+* Concurrent processing
+* Worker scaling
+* Retry mechanisms
+* Exponential backoff
+* Priority queues
+* Delayed processing
+* Scheduled processing
+* Dead Letter Queues
+* Persistent job state
+* Event-driven communication
+* Real-time monitoring
+* Separation of responsibilities
+
+## Project Objective
+
+The primary objective of this project is to demonstrate the design and implementation of a distributed background processing system capable of handling asynchronous and long-running workloads.
+
+The project focuses on practical backend engineering concepts such as queue-based architecture, worker distribution, concurrency, fault handling, retries, persistent job tracking, real-time event communication, and scalable task processing.
